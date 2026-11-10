@@ -1,0 +1,12 @@
+[package]
+name = "pulp-mcp"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Model Context Protocol server (stdio) that drives the PULP DAW"
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+strip = true

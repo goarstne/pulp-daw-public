@@ -24,6 +24,12 @@ if(MSVC)
   endif()
 endif()
 
+if(NOT MSVC)
+  # The counterpart of /fp:precise: no fused multiply-add, so arm64 computes what x64 computes
+  # (GCC contracts a*b+c by default on aarch64, which moves results by a few ulp and fails exact tests).
+  add_compile_options(-ffp-contract=off)
+endif()
+
 # ---------------------------------------------------------------- engine
 # Everything that makes sound. No JUCE, no window, no audio device, no OS calls.
 file(GLOB_RECURSE PULP_ENGINE_SRC CONFIGURE_DEPENDS
@@ -78,10 +84,12 @@ if(PULP_BUILD_APP)
   target_compile_definitions(pulp_app PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
-    JUCE_ASIO=1
-    JUCE_WASAPI=1
-    JUCE_WASAPI_EXCLUSIVE=1
-    JUCE_DIRECTSOUND=0
+    $<$<PLATFORM_ID:Windows>:JUCE_ASIO=1>
+    $<$<PLATFORM_ID:Windows>:JUCE_WASAPI=1>
+    $<$<PLATFORM_ID:Windows>:JUCE_WASAPI_EXCLUSIVE=1>
+    $<$<PLATFORM_ID:Windows>:JUCE_DIRECTSOUND=0>
+    $<$<PLATFORM_ID:Linux>:JUCE_ALSA=1>
+    $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
     JUCE_PLUGINHOST_VST3=1
     JUCE_REPORT_APP_USAGE=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
@@ -100,8 +108,8 @@ if(PULP_BUILD_APP)
   # dist: a folder that runs on its own when PULP.exe is double-clicked.
   add_custom_target(dist
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/dist/PULP"
-    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:pulp_app>" "${CMAKE_SOURCE_DIR}/dist/PULP/PULP.exe"
-    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:pulp_render>" "${CMAKE_SOURCE_DIR}/dist/PULP/pulp_render.exe"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:pulp_app>" "${CMAKE_SOURCE_DIR}/dist/PULP/PULP${CMAKE_EXECUTABLE_SUFFIX}"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:pulp_render>" "${CMAKE_SOURCE_DIR}/dist/PULP/pulp_render${CMAKE_EXECUTABLE_SUFFIX}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${CMAKE_SOURCE_DIR}/factory" "${CMAKE_SOURCE_DIR}/dist/PULP/factory"
     DEPENDS pulp_app pulp_render factory
     COMMENT "Copying PULP into dist/PULP")

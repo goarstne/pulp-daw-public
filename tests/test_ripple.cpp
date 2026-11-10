@@ -395,7 +395,7 @@ TEST(ripple_swapping_the_user_table_while_notes_sound_is_safe_and_smooth) {
             }
         });
         const int64 before = Rt::allocationsInRt.load();
-        while (loads.load() < 60 && d.pos < 48000 * 20) d.run(960);
+        while (loads.load() < 60 && d.pos < 48000 * 120) d.run(960);   // 120 s, not 20: a fast machine renders 20 s before 60 loads have come off the disk
         stop.store(true);
         loader.join();
         CHECK(Rt::allocationsInRt.load() == before);

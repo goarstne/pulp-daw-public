@@ -8,6 +8,13 @@ namespace pulp {
 
 namespace fs = std::filesystem;
 static fs::path u8path(const std::string& s) { return fs::path(std::u8string(s.begin(), s.end())); }
+#ifdef _WIN32
+static FILE* openFile(const fs::path& p, bool write) { return _wfopen(p.wstring().c_str(), write ? L"wb" : L"rb"); }
+#else   // POSIX: paths are bytes already, and off_t is 64 bits on every Linux this builds for
+static FILE* openFile(const fs::path& p, bool write) { return fopen(p.c_str(), write ? "wb" : "rb"); }
+#define _fseeki64 fseeko
+#define _ftelli64 ftello
+#endif
 
 float SampleData::peak() const {
     float p = 0.0f;
@@ -54,7 +61,7 @@ inline void wr32(std::vector<unsigned char>& o, unsigned v) { wr16(o, v & 0xFFFF
 
 uint64 nextAudioUid() { static std::atomic<uint64> n{1}; return n.fetch_add(1); }
 
-void* openFileForRead(const std::string& utf8Path) { return _wfopen(u8path(utf8Path).wstring().c_str(), L"rb"); }
+void* openFileForRead(const std::string& utf8Path) { return openFile(u8path(utf8Path), false); }
 
 // Walks the chunks of a WAV file. read(offset, dst, n) returns how many bytes it could give.
 template <class Read>
@@ -206,7 +213,7 @@ bool WavStreamWriter::open(const std::string& path, double sampleRate, int chann
     std::error_code ec;
     auto p = u8path(path);
     if (p.has_parent_path()) fs::create_directories(p.parent_path(), ec);
-    FILE* f = _wfopen(p.wstring().c_str(), L"wb");
+    FILE* f = openFile(p, true);
     if (!f) return false;
     file_ = f;
     path_ = path;

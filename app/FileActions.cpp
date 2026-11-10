@@ -225,10 +225,14 @@ void MainComponent::fileMenu(juce::Component* target) {
             });
         }
         else if (r == 8) {
+           #if JUCE_WINDOWS
             // registers the file type for this Windows user only
             const auto exe = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
             const bool ok = juce::WindowsRegistry::registerFileAssociation(".pulp", "PULP.Project", "PULP project", exe, 0, true, juce::WindowsRegistry::WoW64_Default);
             showMessage(ok ? "Done. Double-clicking a .pulp file now opens it in PULP." : "Windows did not accept the change.");
+           #else
+            showMessage("This is only built for Windows so far. Here, a project opens with: PULP song.pulp");
+           #endif
         }
         else if (r == 9) ifSafeToDiscard([] { juce::JUCEApplication::getInstance()->quit(); });
         else if (r >= 200 && r - 200 < baks.size()) { const auto f = baks[r - 200]; ifSafeToDiscard([this, f] { session_.restoreBackup(f); }); }

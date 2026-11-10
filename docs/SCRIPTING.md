@@ -1,7 +1,12 @@
 # Driving PULP without clicking
 
-`PULP.exe --script file.txt --log out.log [--no-audio] [--data-dir folder] [--size 1500x860]`
+`PULP --script file.txt --log out.log [--no-audio] [--data-dir folder] [--size 1500x860]` (`PULP.exe` on Windows)
 
+- `--control` instead of `--script`: commands are read from stdin as they arrive and what they log is written
+  to stdout, for as long as stdin stays open. It is a normal run otherwise (the user's settings, the sound
+  card unless `--no-audio`), without the crash-recovery question and the tour. Paths are relative to the
+  working directory. When stdin closes PULP closes, asking first if there is unsaved work. This is how the
+  MCP server in `mcp/` drives the program.
 - `--no-audio` runs the engine from a silent background thread: nothing is played. Use it for every
   automated check that does not specifically test the sound card.
 - A scripted run never writes the user's settings, recent files or autosaves. Give it `--data-dir <folder>` to
@@ -72,6 +77,7 @@
 | `knobdown <address>`, `knobset <address> <0..1>`, `knobup <address>` | a control being grabbed, moved and let go by hand (for recording movements) |
 | `paramval <address>`, `autos`, `settingspage <0|1>` | log a control's value; log curves, links and events; show the audio or MIDI settings page |
 | `ed sel <from s> <to s>`, `ed op <trim|cut|silence|fadein|fadeout|normalize|reverse|learn|denoise|undo|new|all|play>`, `ed load <file>`, `ed save <file>`, `ed toplaylist`, `ed info` | the newest open Splice editor (open one with `fx <track> <slot> editor` and `openfx`; start and stop recording with `fxparam <track> <slot> rec 1|0`) |
+| `step <channel> <step> <0 or 1>`, `addnote <channel> <key> <tick> <length> [velocity 0..1]`, `clearnotes <channel>` | edits to the current pattern by number instead of by mouse: a step square; a note (key 60 is C5, 240 ticks are one step, 960 a beat); empty a channel. Channels and steps count from 0 |
 | `dump <file>` | write the project JSON |
 | `log <text>` | write a line to the log |
 

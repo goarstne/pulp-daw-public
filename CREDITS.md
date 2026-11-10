@@ -17,6 +17,7 @@ version 3 (AGPLv3); the full text is in `LICENSE`.
 | Steinberg ASIO SDK headers, as bundled inside JUCE's juce_audio_devices | bundled with JUCE 9.0.4 | ASIO driver support | GPLv3 (the SDK is offered under the Steinberg ASIO licence or GPLv3; GPLv3 is the one used) |
 | Libraries bundled inside JUCE's modules (HarfBuzz, SheenBidi, libpng, libjpeg, zlib and others) | see `JUCE.spdx.json` in the JUCE source | text shaping and image formats | their own permissive licences, listed in JUCE's SPDX file |
 | Steinberg VST3 SDK, as bundled inside JUCE's juce_audio_processors_headless | bundled with JUCE 9.0.4 | hosting VST3 plugins | MIT (Copyright 2025 Steinberg Media Technologies GmbH; `VST3_SDK/LICENSE.txt` in the JUCE source). VST is a trademark of Steinberg Media Technologies GmbH. |
+| Rust crates linked into `pulp-mcp` (the MCP server, `mcp/`): serde_json 1.0.154, serde_core 1.0.229, itoa 1.0.19, memchr 2.8.3, zmij 1.0.23 | as locked in `mcp/Cargo.lock` | reading and writing JSON | MIT (serde_json, serde_core and itoa are offered under MIT or Apache 2.0, memchr under the Unlicense or MIT; zmij is MIT) |
 
 Build tools (not part of the program): CMake 4.4.4 (BSD 3-Clause), Ninja 1.13.2 (Apache 2.0), Microsoft Visual C++ Build Tools.
 

@@ -4,6 +4,16 @@
 #include "Shortcuts.h"
 #include "CurveView.h"
 #include "CreativeViews.h"
+#include <iostream>
+#include <thread>
+// stdin for --control, read without stdio (see listen())
+#if JUCE_WINDOWS
+ #include <io.h>
+ static int readStdin(char* to, unsigned n) { return _read(0, to, n); }
+#else
+ #include <unistd.h>
+ static int readStdin(char* to, unsigned n) { return (int)::read(0, to, n); }
+#endif
 
 ScriptRunner::ScriptRunner(MainComponent& main, juce::File logFile) : main_(main), log_(std::move(logFile)) {
     if (log_ != juce::File()) { log_.getParentDirectory().createDirectory(); log_.replaceWithText(""); }
@@ -11,6 +21,36 @@ ScriptRunner::ScriptRunner(MainComponent& main, juce::File logFile) : main_(main
 
 void ScriptRunner::log(const juce::String& line) {
     if (log_ != juce::File()) log_.appendText(line + "\n");
+    if (live_) std::cout << line.toStdString() << std::endl;
+}
+
+// The runner that listens on stdin; only touched on the message thread. The reading thread may outlive
+// the runner (it waits in read() until stdin closes or the process ends), so it reaches it through this.
+static ScriptRunner* liveRunner = nullptr;
+
+ScriptRunner::~ScriptRunner() { if (liveRunner == this) liveRunner = nullptr; }
+
+void ScriptRunner::listen() {
+    live_ = true;
+    liveRunner = this;
+    baseDir_ = juce::File::getCurrentWorkingDirectory();
+    std::thread([] {
+        // read(), not std::getline: a thread waiting inside stdio keeps stdin locked, and exit() waits for that lock for ever
+        std::string pending;
+        char buf[4096];
+        for (int n; (n = readStdin(buf, sizeof(buf))) > 0;) {
+            pending.append(buf, (size_t)n);
+            for (size_t nl; (nl = pending.find('\n')) != std::string::npos; pending.erase(0, nl + 1))
+                juce::MessageManager::callAsync([line = pending.substr(0, nl)] {
+                    if (auto* r = liveRunner) { r->lines_.add(juce::String::fromUTF8(line.c_str())); if (!r->isTimerRunning()) r->startTimer(1); }
+                });
+        }
+        // stdin closed: whoever was driving the program has gone, so the program goes too
+        // (asking first if there is unsaved work), and nothing more is written to the pipe nobody reads
+        juce::MessageManager::callAsync([] {
+            if (auto* r = liveRunner) { r->live_ = false; r->main_.ifSafeToDiscard([] { juce::JUCEApplication::getInstance()->quit(); }); }
+        });
+    }).detach();
 }
 
 bool ScriptRunner::load(const juce::File& script) {
@@ -38,6 +78,7 @@ void ScriptRunner::timerCallback() {
         if (line.startsWith("wait ")) { startTimer(juce::jmax(1, line.fromFirstOccurrenceOf(" ", false, false).getIntValue())); return; }
         if (!run(line)) return;
     }
+    if (live_) { lines_.clear(); next_ = 0; return; }       // everything so far is done; more may come
     log("script finished, " + juce::String(errors_) + " errors");
 }
 
@@ -678,6 +719,27 @@ bool ScriptRunner::run(const juce::String& line) {
         const auto err = s.openDevice(args[1], args[2], args[3].getDoubleValue(), args[4].getIntValue());
         log("device: " + (err.isEmpty() ? s.deviceSummary() : "FAILED " + err));
         if (err.isNotEmpty()) ++errors_;
+    }
+    // ---- edits by number rather than by mouse, for whoever drives PULP through --control ----
+    else if (cmd == "step" && args.size() >= 4) {           // step <channel> <step> <0|1>: one square of the current pattern
+        auto* c = s.channel(args[1].getIntValue());
+        const int st = args[2].getIntValue();
+        if (!c || st < 0 || st >= s.project.pattern().steps) fail("no such channel or step");
+        else { pulp::Project::setStep(s.project.pattern().notesFor(c->id), st, args[3].getIntValue() != 0); s.commit("Step"); }
+    }
+    else if (cmd == "addnote" && args.size() >= 5) {        // addnote <channel> <key> <tick> <length> [velocity 0..1]: a note in the current pattern
+        auto* c = s.channel(args[1].getIntValue());
+        pulp::Note n;
+        n.key = args[2].getIntValue();
+        n.tick = args[3].getIntValue();
+        n.length = args[4].getIntValue();
+        if (args.size() > 5) n.velocity = juce::jlimit(0.0f, 1.0f, args[5].getFloatValue());
+        if (!c || n.key < 0 || n.key > 127 || n.tick < 0 || n.length < 1) fail("no such channel, or a key, tick or length out of range");
+        else { auto& notes = s.project.pattern().notesFor(c->id); notes.push_back(n); pulp::sortNotes(notes); s.commit("Add note"); }
+    }
+    else if (cmd == "clearnotes" && args.size() >= 2) {     // clearnotes <channel>: empties the channel in the current pattern
+        if (auto* c = s.channel(args[1].getIntValue())) { s.project.pattern().notesFor(c->id).clear(); s.commit("Clear notes"); }
+        else fail("no such channel");
     }
     else if (cmd == "log") log(line.fromFirstOccurrenceOf(" ", false, false));
     else fail("unknown command");

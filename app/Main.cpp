@@ -1,8 +1,9 @@
 // PULP: program entry point, main window and command line.
-//   PULP.exe [project.pulp]
+//   PULP [project.pulp]   (PULP.exe on Windows)
 //   --project <file>   open a project
 //   --script <file>    run a script of interface actions (docs/SCRIPTING.md)
 //   --log <file>       where script output goes
+//   --control          take script commands from stdin as they arrive and answer on stdout (the MCP server in mcp/ drives PULP this way)
 //   --no-audio         do not open a sound card (silent, for automated tests)
 //   --size <w>x<h>     window size
 //   --data-dir <dir>   keep settings, autosaves and the crash log here (tests)
@@ -98,6 +99,10 @@ public:
             runner = std::make_unique<ScriptRunner>(*window->main, log.isNotEmpty() ? cwd.getChildFile(log) : juce::File());
             if (runner->load(cwd.getChildFile(script))) runner->start();
             else quit();
+        } else if (args.contains("--control")) {
+            // a normal run with the user's settings, minus the windows that would wait for a person
+            runner = std::make_unique<ScriptRunner>(*window->main, log.isNotEmpty() ? cwd.getChildFile(log) : juce::File());
+            runner->listen();
         } else { window->main->checkCrashRecovery(); window->main->checkFirstRun(); }
     }
 

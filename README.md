@@ -7,6 +7,13 @@ Playlist, Mixer with effects, Browser, undo history, autosave and WAV export. It
 PULP is not affiliated with or endorsed by Image-Line; it contains no FL Studio code, names, graphics, presets
 or samples. It is free software under the GNU Affero General Public License version 3 (see `LICENSE`).
 
+> **This fork** adds two things to [AlexAtFF/pulp-daw-public](https://github.com/AlexAtFF/pulp-daw-public):
+> a **Linux build**, developed and tested on **arm64** (aarch64), and a **built-in MCP server** written in
+> Rust, so an AI agent can drive the program. See [Linux](#linux) and [MCP server](#mcp-server). The program
+> itself is still upstream's C++; the rest of this file is upstream's text and describes Windows
+> (`PULP.exe`, `build.bat`, `%APPDATA%`), which still builds from the same sources but has not been
+> rebuilt since the changes here.
+
 This is an early, unfinished build: `PROGRESS.md` is the development log and says exactly what is built, what
 is partial, what is missing and what has not been verified. In short: the planned feature set is in, except a
 note-by-note pitch editor, a modular patcher and CLAP plugin hosting, plus the gaps PROGRESS.md lists. You
@@ -37,6 +44,93 @@ Studio 2022 C++ Build Tools (the free "Desktop development with C++" workload) a
 | `build.bat testplugins` | two small VST3 plugins used only by the hosting check (`scripts\m10_vst3.txt`) |
 | `build.bat library` | downloads the recordings for the factory instruments (about 420 MB, once) and rebuilds the library |
 | `dist\PULP\pulp_render.exe song.pulp out.wav` | render a project with no window and no sound card |
+
+## Linux
+
+Built and tested on Arch Linux ARM (aarch64, GCC 16). Nothing in the changes is specific to arm64, so
+x86-64 should build the same way, but that has not been tried.
+
+```sh
+./build.sh          # everything: builds, runs the tests, fills dist/PULP
+dist/PULP/PULP      # the program
+```
+
+| Command | What it does |
+|---------|--------------|
+| `./build.sh` | release build of everything, runs the tests, builds the factory library if it is not there yet (downloads about 420 MB once), fills `dist/PULP` with `PULP`, `pulp_render`, `pulp-mcp` and `factory` |
+| `./build.sh quick` | engine, renderer and tests only (no JUCE), runs the tests |
+| `./build.sh app` | the program and the MCP server only, skips the tests and the download |
+| `./build.sh library` | downloads the recordings for the factory instruments and rebuilds the library |
+
+You need a C++20 compiler, CMake 3.24 or newer (without it the script falls back on `uvx cmake`), Ninja,
+Python 3, Rust (`cargo`), and the development packages JUCE uses on Linux: ALSA, FreeType, Fontconfig, X11
+with Xext, Xrandr, Xinerama and Xcursor, and Mesa (OpenGL). JACK is used when it is installed.
+
+- Arch: `sudo pacman -S --needed base-devel cmake ninja rust python alsa-lib freetype2 fontconfig libx11 libxext libxrandr libxinerama libxcursor mesa`
+- Debian / Ubuntu: `sudo apt install build-essential cmake ninja-build cargo python3 libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxcursor-dev libglu1-mesa-dev mesa-common-dev` (the list from JUCE's documentation; not tried here)
+
+What is different from Windows:
+
+- **Audio** is ALSA (which PipeWire and PulseAudio also answer to) or JACK instead of ASIO and Windows Audio.
+- **The window** is an X11 window; under Wayland it runs through XWayland. With no display (`DISPLAY`
+  unset) PULP runs without a window, which is how scripts can be run over SSH.
+- **Your files** are in `~/.config/PULP` instead of `%APPDATA%\PULP`.
+- **VST3 plugins** are looked for in `~/.vst3`, `/usr/local/lib/vst3` and `/usr/lib/vst3`. Hosting was
+  checked with the two test plugins (`./build.sh testplugins`, then `scripts/m10_vst3.txt`): scanning in a
+  separate process, a plugin that crashes the scanner, an instrument, an effect, automation and saving all
+  work. No plugin from another maker has been tried. The script command `vstshot` (a picture of a plugin's
+  own window) is not available.
+- File > "Open .pulp files with PULP when double-clicked" and the installer are Windows only.
+
+What was checked on arm64: all 559 engine tests pass; the 441 files of the factory library built here
+(synthesized drums and instruments, and the recordings after trimming, tuning, looping and FLAC encoding)
+have the same SHA-256 as the ones upstream built on Windows x64; the program starts with a window, lists
+the ALSA devices and draws correctly. Upstream's interface scripts (`scripts/m*.txt`) were run without a
+display and without a sound card: 32 of them finish with no errors, and the others stop only at things
+that are not there (input files that are not in the repository, a third-party plugin, `vstshot`). The
+seven scripts that need a sound card were not run. As upstream says of its own build: nobody has listened
+to it, and here nobody has clicked through it by hand either.
+
+To make that possible the build switches off fused multiply-add (`-ffp-contract=off`, the counterpart of
+MSVC's `/fp:precise`); with it on, arm64 results differ from x64 in the last bits and two exact tests fail.
+
+## MCP server
+
+`pulp-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server (Rust, in `mcp/`, stdio
+transport). It starts PULP and passes it the commands of PULP's own script language (`docs/SCRIPTING.md`),
+so an agent can do what the scripts can: program steps and notes, add instruments and effects, set
+parameters, automate, save, export, and look at the result.
+
+Register it with an MCP client, for example Claude Code:
+
+```sh
+claude mcp add pulp -- /path/to/dist/PULP/pulp-mcp
+```
+
+or in a client's JSON configuration: `{"mcpServers": {"pulp": {"command": "/path/to/dist/PULP/pulp-mcp"}}}`.
+
+| Tool | What it does |
+|------|--------------|
+| `pulp_start` | starts PULP; options: a project to open, `no_audio` (no sound card), `headless` (no window), `data_dir` (a sandbox for settings), window size. Optional: `pulp_run` starts PULP when it is not running |
+| `pulp_run` | runs script commands, one per line, and returns what they logged (`state`, `step 0 4 1`, `addchannel trio`, `addnote 4 60 0 480`, `set tempo 128`, `export out.wav`, `waitexport`, `quit` ...) |
+| `pulp_screenshot` | a PNG of the program or one of its windows |
+| `pulp_render` | renders a saved project to WAV with `pulp_render`, no window needed |
+| `pulp_help` | the command reference (`docs/SCRIPTING.md`) |
+
+- The server finds `PULP` and `pulp_render` beside itself; `PULP_BIN` and `PULP_RENDER_BIN` name other places.
+- Relative paths in commands are relative to the folder the client started the server in.
+- PULP runs as a normal program with its window and your settings, so you see and hear what the agent
+  does and can work in it at the same time. With `headless`, or on a machine with no display at all, it
+  runs without a window; commands, export and screenshots work the same.
+- `quit` closes PULP without asking. When the client goes away PULP closes too, but asks first if there
+  is unsaved work.
+- The server answers both generations of the protocol: the `initialize` handshake (2024-11-05 to
+  2025-11-25) and the stateless one (2026-07-28).
+- Without the server the same channel is `PULP --control`: commands on stdin, answers on stdout.
+
+`python3 mcp/smoke.py` checks all of it against the real program: it speaks MCP to `dist/PULP/pulp-mcp`,
+programs a beat and a melody, exports and renders them and asserts the audio is not silent (no window is
+shown). `cargo test --manifest-path mcp/Cargo.toml` checks the protocol alone.
 
 ## Pick the audio device
 
@@ -366,6 +460,7 @@ output per plugin. PROGRESS.md has the full list.
 | `app\` | the program: windows, drawing, input, devices |
 | `render\` | the command-line renderer |
 | `tests\` | renders audio and asserts on it |
+| `mcp\` | the MCP server (Rust) |
 | `factory\` | the factory library and its manifests: `sources.json` (where every recording comes from), `manifest.json` (every file) |
 | `factory-cache\` | the downloaded recordings (not in git; filled by `tools\fetch-samples.py`) |
 | `docs\` | the project file format, the plugin interface, scripting |

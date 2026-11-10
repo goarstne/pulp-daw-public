@@ -1,6 +1,9 @@
 #include "pulp/Stream.h"
 #include <cstdio>
 #include <thread>
+#ifndef _WIN32
+#define _fseeki64 fseeko
+#endif
 
 namespace pulp {
 

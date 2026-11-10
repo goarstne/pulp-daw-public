@@ -8,6 +8,8 @@ public:
     ScriptRunner(MainComponent& main, juce::File logFile);
     bool load(const juce::File& script);
     void start() { startTimer(50); }
+    void listen();                          // --control: commands arrive on stdin as they are typed, the log leaves on stdout
+    ~ScriptRunner() override;
     void log(const juce::String& line);
     static bool saveSnapshot(juce::Component& c, const juce::File& file, float scale = 1.0f);
 
@@ -22,4 +24,5 @@ private:
     juce::File baseDir_;
     bool exportBusy_ = false;
     bool scriptBusy_ = false;       // an asynchronous command (calibration) has not answered yet
+    bool live_ = false;             // listen(): there is no end of script, lines keep coming
 };

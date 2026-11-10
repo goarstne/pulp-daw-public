@@ -14,3 +14,4 @@ factory/Effects/
 # private staging folders for plugins being written
 /staging/
 /buildstaging*/
+mcp/target/

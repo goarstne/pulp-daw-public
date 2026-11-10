@@ -5,8 +5,13 @@
 #include "Mp3TestUtil.h"
 #include "Mp3TestStreams.h"
 #include <chrono>
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#else
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 using namespace pulp;
 using namespace tu;
 using namespace mp3t;
@@ -28,6 +33,7 @@ std::vector<unsigned char> encoded(Sig kind, int channels, size_t frames, int kb
 // Decodes a copy of the bytes that lies between two pages of memory that may not be touched: the copy
 // ends exactly where the page behind it starts, and a page in front is barred too. A decoder that
 // reads even one byte outside its input stops the test run on the spot.
+#ifdef _WIN32
 struct Fenced {
     unsigned char* base = nullptr;
     unsigned char* data = nullptr;
@@ -55,6 +61,34 @@ bool faults(const unsigned char* p) {
     }
     return false;
 }
+#else
+struct Fenced {
+    unsigned char* base = nullptr;
+    unsigned char* data = nullptr;
+    size_t total = 0;
+    Fenced(const unsigned char* from, size_t size) {
+        const size_t page = (size_t)sysconf(_SC_PAGESIZE), body = (size + page - 1) / page * page;
+        void* m = mmap(nullptr, body + 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (m == MAP_FAILED) return;
+        base = (unsigned char*)m;
+        total = body + 2 * page;
+        data = base + page + body - size;
+        if (size) std::memcpy(data, from, size);
+        mprotect(base, page, PROT_NONE);
+        mprotect(base + page + body, page, PROT_NONE);
+    }
+    ~Fenced() { if (base) munmap(base, total); }
+};
+// True if reading the byte at p is stopped by the system: the kernel refuses to copy it into a pipe.
+bool faults(const unsigned char* p) {
+    int fd[2];
+    if (pipe(fd) != 0) return false;
+    const bool bad = write(fd[1], p, 1) != 1;
+    close(fd[0]);
+    close(fd[1]);
+    return bad;
+}
+#endif
 std::shared_ptr<SampleData> decodeExact(const unsigned char* data, size_t size, std::string* error = nullptr) {
     Fenced f(data, size);
     CHECK(f.base != nullptr);
